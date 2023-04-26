@@ -1,0 +1,226 @@
+<?xml version="1.0" encoding="UTF-8" ?>
+<!-- $Header: XXGAHLPMEXPLST.xml 120.0.12000000.23 2013/03/09 09:54:09 rkguntup noship $ -->
+<!-- dbdrv: exec java oracle/apps/xdo/oa/util XDOLoader.class java &phase=dat checkfile:~PROD:patch/115/publisher/defs:XXGAHLPMEXPLST.xml UPLOAD -DB_USERNAME &un_apps -DB_PASSWORD &pw_apps -JDBC_CONNECTION &jdbc_db_addr -LOB_TYPE DATA_TEMPLATE -APPS_SHORT_NAME ~PROD -LOB_CODE XXGAHLPMEXPLST -LANGUAGE 00 -XDO_FILE_TYPE XML-DATA-TEMPLATE -FILE_NAME &fullpath:~PROD:patch/115/publisher/defs:XXGAHLPMEXPLST.xml -->
+<!-- GSCC_Category="Xdo Data Definition" -->
+<dataTemplate name="XXHPV_INVOICE_RECEIPT"  version="1.0">
+<properties>
+  <property name="xml_tag_case"        value="UPPER" />
+  <property name="debug_mode"          value="ON"/>
+  <property name="scalable_mode"       value="ON"/>
+</properties>
+<parameters>
+   <parameter name="P_OQC_NUMBER"           dataType = "varchar2"> </parameter>
+</parameters>
+<lexicals>
+</lexicals>
+<dataQuery>
+<sqlStatement name="Q_INFO_QRY">
+<![CDATA[
+
+    WITH T_CUSTOMER_INFO AS (
+      SELECT XVCH.COMPANY_FULL_NAME AS CUSTOMER_NAME
+              ,INVOICE_ADDRESS
+              ,SHIPMENT_ADDRESS
+              ,SHIPMENT_TEL
+              ,CONTACTOR
+              ,CONTACTOR_EMAIL
+              ,REGION_CODE
+              ,XOI.SHORT_NAME_ENG
+              ,XOI.SHORT_NAME_CHT
+              ,XOI.FULL_NAME_ENG
+              ,XOI.FULL_NAME_CHT
+              ,XOI.ADDRESS_ENG
+              ,XOI.ADDRESS_CHT
+              ,XOI.TEL_ENG as TEL_ENG
+              ,XOI.TEL_CHT 
+              ,TO_CHAR(SYSDATE, 'DD-Mon-YYYY') AS INVOICE_DATE
+      FROM APPS.Q_XXHPV_OQC_MAIN_V OQCM
+                ,APPS.XXHPV_VENDOR_CUSTOMER_HEADERS XVCH
+                ,APPS.XXHPV_ORGANIZATION_INFO XOI
+            WHERE 1=1
+              AND　OQCM.OQC_NOTIFY_NUMBER = :P_OQC_NUMBER
+              AND XVCH.COMPANY_SHORT_NAME = OQCM.SHIPMENT_CUSTOMER
+              AND XOI.ORG_CODE = (SELECT ORG_CODE FROM APPS.XXHPV_SO_HEADERS WHERE ORDER_NUMBER = OQCM.HIPPO_OQC_UNSHIP_SO_NUMBER)
+              AND ROWNUM = 1
+              )
+          SELECT * 
+              FROM T_CUSTOMER_INFO
+              
+          
+
+]]>
+</sqlStatement>
+
+<sqlStatement name="Q_ITEM_QRY">
+<![CDATA[
+
+       
+            WITH T_SO_INFO AS (
+                  SELECT 
+                         XSH.CURRENCY   
+                        ,XSH.PAYMENT_TERM
+                        ,XSH.SHIPMENT_TERM
+                        ,TO_CHAR(XSH.CREATION_DATE,'DD-Mon-YYYY') AS CREATION_DATE
+                    FROM APPS.XXHPV_SO_HEADERS  XSH
+                    WHERE ORDER_NUMBER IN (SELECT HIPPO_OQC_CLIENT_UNSHIP_SO_NO FROM APPS.Q_XXHPV_OQC_PACKING_LIST_V WHERE OQC_NOTIFY_NUMBER = :P_OQC_NUMBER)
+                    AND ROWNUM =1 
+                    GROUP BY XSH.CURRENCY   
+                        ,XSH.PAYMENT_TERM
+                        ,XSH.SHIPMENT_TERM
+                        ,XSH.CREATION_DATE
+                        )
+            
+                ,T_VALVE_DETAILS AS (
+                      SELECT SO.ORDER_NUMBER
+                          ,SO.LINE_NUMBER
+                          ,SO.ITEM_ID 
+                          ,SO.FLANGE_SPEC 
+                          ,SO.DN_SIZE
+                          ,SO.BODY_MATERIAL
+                          ,CASE WHEN SO.PRODUCT_CATEGORY = 'BFLY'
+                            THEN 'Butterfly Valve' END AS ITEM_DESCRIPTION
+                          ,XIM.WEIGHT_KG as ITEM_WEIGHT
+                        FROM APPS.XXHPV_SALES_ORDER_SPEC_V SO
+                            ,apps.xxhpv_inv_master XIM
+                        WHERE ORDER_NUMBER IN (SELECT HIPPO_OQC_CLIENT_UNSHIP_SO_NO FROM APPS.Q_XXHPV_OQC_PACKING_LIST_V WHERE OQC_NOTIFY_NUMBER = :P_OQC_NUMBER)
+                        AND SO.PRODUCT_CATEGORY IS NOT NULL
+                        AND SO.ITEM_ID  = XIM.ITEM_CODE   
+                        GROUP BY SO.ORDER_NUMBER
+                          ,SO.LINE_NUMBER
+                          ,SO.ITEM_ID 
+                          ,SO.FLANGE_SPEC
+                          ,SO.DN_SIZE
+                          ,SO.BODY_MATERIAL
+                          ,SO.PRODUCT_CATEGORY
+                          ,XIM.WEIGHT_KG
+                         ORDER BY SO.ORDER_NUMBER, SO.LINE_NUMBER
+                          )
+                          
+                    ,T_INV_DETAIL as (
+                          SELECT OQCPL.CLIENT_PO_LINE_NUMBER AS PO_NUMBER
+                            ,OQCPL.HIPPO_OQC_CLIENT_UNSHIP_SO_NO
+                            ,OQCPL.HIPPO_OQC_UNSHIP_SO_LINE
+                            ,OQCPL.HIPPO_OQC_PART_NUMBER AS ITEM_CODE
+                            ,OQCPL.NPS_SIZE AS SIZE_INCH
+                            ,SUM(OQCPL.SHIPMENT_QTY) AS SHIPMENT_QTY
+                            ,TVD.FLANGE_SPEC AS VALVE_CLASS
+                            ,TVD.DN_SIZE
+                            ,TVD.BODY_MATERIAL
+                            ,TVD.ITEM_DESCRIPTION
+                            ,TVD.ITEM_WEIGHT
+                            ,(SELECT SHIPMENT_CRATE_QTY
+                                  FROM APPS.Q_XXHPV_OQC_MAIN_V OQCM
+                                  WHERE 1=1
+                                  AND OQCPL.HIPPO_OQC_CLIENT_UNSHIP_SO_NO = OQCM.HIPPO_OQC_UNSHIP_SO_NUMBER
+                                  ) AS NUMBER_PKG
+                            ,(SELECT to_char(SHIPMENT_WEIGHT,'fm99,999')
+                                  FROM APPS.Q_XXHPV_OQC_MAIN_V OQCM
+                                  WHERE 1=1
+                                  AND OQCPL.HIPPO_OQC_CLIENT_UNSHIP_SO_NO = OQCM.HIPPO_OQC_UNSHIP_SO_NUMBER
+                                  ) AS SHIPMENT_WEIGHT
+                            ,(SELECT to_char(UNIT_PRICE,'fm99,999') 
+                                FROM APPS.XXHPV_SO_LINES XSL 
+                                WHERE 1=1
+                                  AND  OQCPL.HIPPO_OQC_CLIENT_UNSHIP_SO_NO = XSL.ORDER_NUMBER
+                                  AND  TO_NUMBER(OQCPL.HIPPO_OQC_UNSHIP_SO_LINE) = TO_NUMBER(XSL.LINE_NUMBER)
+                             ) AS UNIT_PRICE
+                            ,(SELECT SUB_TOTAL
+                                FROM APPS.XXHPV_SO_LINES XSL 
+                                WHERE 1=1
+                                  AND  OQCPL.HIPPO_OQC_CLIENT_UNSHIP_SO_NO = XSL.ORDER_NUMBER
+                                  AND  TO_NUMBER(OQCPL.HIPPO_OQC_UNSHIP_SO_LINE) = TO_NUMBER(XSL.LINE_NUMBER)
+                             ) AS SUB_TOTAL
+                            ,(SELECT TAX
+                                FROM APPS.XXHPV_SO_LINES XSL 
+                                WHERE 1=1
+                                  AND  OQCPL.HIPPO_OQC_CLIENT_UNSHIP_SO_NO = XSL.ORDER_NUMBER
+                                  AND  TO_NUMBER(OQCPL.HIPPO_OQC_UNSHIP_SO_LINE) = TO_NUMBER(XSL.LINE_NUMBER)
+                             ) AS TAX
+                             ,(SELECT CURRENCY FROM T_SO_INFO ) AS CURRENCY
+                             ,(SELECT PAYMENT_TERM FROM T_SO_INFO ) AS PAYMENT_TERM
+                             ,(SELECT SHIPMENT_TERM FROM T_SO_INFO ) AS SHIPMENT_TERM
+                             ,(SELECT CREATION_DATE FROM T_SO_INFO ) AS CREATION_DATE
+                        FROM APPS.Q_XXHPV_OQC_PACKING_LIST_V OQCPL
+                             ,T_VALVE_DETAILS TVD
+                        WHERE 1=1
+                        AND OQCPL.OQC_NOTIFY_NUMBER = :P_OQC_NUMBER
+                        AND OQCPL.HIPPO_OQC_CLIENT_UNSHIP_SO_NO = TVD.ORDER_NUMBER
+                        AND to_number(OQCPL.HIPPO_OQC_UNSHIP_SO_LINE) = to_number(TVD.LINE_NUMBER)
+                        GROUP BY OQCPL.HIPPO_OQC_CLIENT_UNSHIP_SO_NO
+                                ,OQCPL.HIPPO_OQC_UNSHIP_SO_LINE
+                                ,OQCPL.HIPPO_OQC_PART_NUMBER
+                                ,OQCPL.SHIPMENT_CUSTOMER 
+                                ,OQCPL.CLIENT_PO_LINE_NUMBER
+                                ,OQCPL.NPS_SIZE
+                                ,TVD.FLANGE_SPEC
+                                ,TVD.DN_SIZE
+                                ,TVD.BODY_MATERIAL
+                                ,TVD.ITEM_DESCRIPTION
+                                ,TVD.ITEM_WEIGHT
+                          ORDER BY OQCPL.HIPPO_OQC_CLIENT_UNSHIP_SO_NO
+                                ,OQCPL.HIPPO_OQC_UNSHIP_SO_LINE
+                                )
+                              
+                    , T_SUM as (    
+                        SELECT  TID.*
+                              ,TID.SUB_TOTAL + TID.TAX as SUM_PRICES
+                              ,TID.ITEM_WEIGHT * TID.SHIPMENT_QTY as SUM_WEIGHT
+                              ,(SELECT SUM(SHIPMENT_QTY)FROM T_INV_DETAIL) as TOTAL_QUANTITY
+                          FROM T_INV_DETAIL TID
+                          WHERE 1=1 )
+                    
+                    ,T_SUM_SUM as (
+                          SELECT SUM(T_SUM.SUM_PRICES) as TOTAL_PRICE
+                              ,SUM(T_SUM.SUM_WEIGHT) as TOTAL_WEIGHT
+                          FROM T_SUM
+                          WHERE 1=1
+                         )
+            
+                  SELECT T_SUM.*
+                        ,(SELECT to_char(SUM_PRICES, 'fm99,999') FROM T_SUM_SUM )as SUM_PRICE
+                        ,(SELECT to_char(TOTAL_PRICE, 'fm99,999') FROM T_SUM_SUM ) as TOTAL_PRICE
+                        ,(SELECT to_char(TOTAL_WEIGHT,'fm99,999')  FROM T_SUM_SUM) as TOTAL_WEIGHT
+                        FROM T_SUM
+                        
+                    
+   
+]]>
+</sqlStatement>
+</dataQuery>
+
+<dataStructure>
+<group name="G_INFO"    source="Q_INFO_QRY">   
+    <element name="CUSTOMER_NAME"               dataType="varchar2"     value="CUSTOMER_NAME"/>
+    <element name="INVOICE_ADDRESS"             dataType="varchar2"     value="INVOICE_ADDRESS"/>
+    <element name="SHIPMENT_TEL"                dataType="varchar2"     value="SHIPMENT_TEL"/>
+    <element name="FULL_NAME_ENG"               dataType="varchar2"     value="FULL_NAME_ENG"/>
+    <element name="ADDRESS_ENG"                 dataType="varchar2"     value="ADDRESS_ENG"/>
+    <element name="INVOICE_DATE"                dataType="varchar2"     value="INVOICE_DATE"/>
+</group>
+
+
+ <group name="G_ITEM"    source="Q_ITEM_QRY">   
+    <element name="PO_NUMBER"               dataType="varchar2"     value="PO_NUMBER"/>
+    <element name="CREATION_DATE"           dataType="varchar2"     value="CREATION_DATE"/>
+    <element name="ITEM_CODE"               dataType="varchar2"     value="ITEM_CODE"/>
+    <element name="SIZE_INCH"               dataType="varchar2"     value="SIZE_INCH"/>
+    <element name="VALVE_CLASS"             dataType="varchar2"     value="VALVE_CLASS"/>
+    <element name="ITEM_DESCRIPTION"        dataType="varchar2"     value="ITEM_DESCRIPTION"/>
+    <element name="BODY_MATERIAL"           dataType="varchar2"     value="BODY_MATERIAL"/>
+    <element name="UNIT_PRICE"              dataType="varchar2"     value="UNIT_PRICE"/>
+    <element name="PAYMENT_TERM"            dataType="varchar2"     value="PAYMENT_TERM"/>
+    <element name="SHIPMENT_TERM"           dataType="varchar2"     value="SHIPMENT_TERM"/>
+    <element name="SHIPMENT_QTY"            dataType="varchar2"     value="SHIPMENT_QTY"/>
+    <element name="SHIPMENT_WEIGHT"         dataType="varchar2"     value="SHIPMENT_WEIGHT"/>
+    <element name="NUMBER_PKG"              dataType="varchar2"     value="NUMBER_PKG"/>
+    <element name="SUM_PRICE"               dataType="varchar2"     value="SUM_PRICE"/>
+    <element name="TOTAL_PRICE"             dataType="varchar2"     value="TOTAL_PRICE"/>
+    <element name="TOTAL_QUANTITY"          dataType="varchar2"     value="TOTAL_QUANTITY"/>
+    <element name="TOTAL_WEIGHT"            dataType="varchar2"     value="TOTAL_WEIGHT"/>
+    <element name="CURRENCY"                dataType="varchar2"     value="CURRENCY"/>
+</group>
+
+  
+
+</dataStructure>
+</dataTemplate>
